@@ -1,0 +1,27 @@
+# --- Python 相關 ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+build/
+dist/
+
+# --- 專案特定設定 ---
+# 絕對不可上傳的環境變數檔案 (包含 API Key)
+.env
+
+# 排除執行產生的日誌與數據檔
+logs/
+*.log
+*.csv
+
+# --- IDE 與系統檔 ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Docker 相關 ---
+.devcontainer/.DS_Store

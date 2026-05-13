@@ -1,0 +1,18 @@
+{
+    "name": "DigitalTwinGPS",
+    "dockerComposeFile": [
+        "docker-compose.yml"
+    ],
+    "service": "app",
+    "workspaceFolder": "/workspace",
+    "overrideCommand": true,
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ]
+        }
+    },
+    "remoteUser": "root"
+}

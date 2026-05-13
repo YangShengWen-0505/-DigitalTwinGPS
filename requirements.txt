@@ -1,0 +1,10 @@
+# 直接依賴（固定主版本）
+# 部署前請執行: pip freeze > requirements-lock.txt 以鎖定所有傳遞性依賴
+Flask==3.0.0
+googlemaps==4.10.0
+python-dotenv==1.0.0
+requests==2.31.0
+psutil==5.9.6
+polyline==2.0.1
+pyOpenSSL==26.2.0
+cryptography==46.0.5

@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin - Analytics Platform</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-glass: rgba(28, 28, 32, 0.75);
+            --bg-glass-hover: rgba(45, 45, 50, 0.85);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --text-main: #f5f5f7;
+            --text-muted: #86868b;
+            --accent-blue: #0A84FF;
+            --accent-green: #30D158;
+            --accent-red: #FF453A;
+            --accent-orange: #FF9F0A;
+            --radius-lg: 16px;
+            --radius-md: 10px;
+        }
+
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #000; color: var(--text-main); overflow: hidden; -webkit-font-smoothing: antialiased; }
+        
+        #map { height: 100vh; width: 100vw; z-index: 1; } 
+        .dark-filter .leaflet-tile-pane { filter: grayscale(80%) invert(100%) contrast(90%); transition: filter 0.5s ease; } 
+        
+        .glass-panel {
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        #top-nav {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 8px; padding: 6px 8px; z-index: 1000; align-items: center;
+            border-radius: 30px;
+        }
+        .nav-brand { font-weight: 600; font-size: 14px; margin: 0 12px; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;}
+        .nav-btn {
+            background: transparent; color: var(--text-muted); border: none;
+            padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 500;
+            transition: all 0.2s ease; display: flex; align-items: center; gap: 6px;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+        .nav-btn.primary { color: var(--accent-blue); background: rgba(10, 132, 255, 0.1); }
+        .nav-btn.primary:hover { background: rgba(10, 132, 255, 0.2); }
+
+        #left-container {
+            position: absolute; top: 80px; left: 20px; z-index: 999;
+            display: flex; flex-direction: column; gap: 15px; width: 280px;
+            max-width: calc(100vw - 80px);
+            max-height: calc(100vh - 100px); overflow-y: auto;
+        }
+        #left-container::-webkit-scrollbar { display: none; }
+        
+        #live-panel, #sys-monitor { width: 100%; box-sizing: border-box; padding: 20px; }
+
+        .sys-data { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; align-items: flex-start;}
+        .sys-val { color: var(--text-main); font-weight: bold; }
+        .url-box { font-size: 11px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; word-break: break-all; margin-top: 8px; color: var(--accent-blue); line-height: 1.4;}
+
+        .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .status-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .live-dot {
+            width: 8px; height: 8px; background-color: var(--accent-green); border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-green); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+        
+        .action-text { font-size: 20px; font-weight: 700; color: var(--text-main); margin-bottom: 12px; line-height: 1.3;}
+        .coords { font-size: 13px; color: var(--text-muted); font-family: 'SF Mono', Consolas, monospace; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 8px; margin-bottom: 15px;}
+        
+        .toggle-wrap { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--text-muted); cursor: pointer; margin-bottom: 10px; }
+        .toggle-switch {
+            position: relative; width: 40px; height: 22px; background: rgba(255,255,255,0.2);
+            border-radius: 20px; transition: 0.3s;
+        }
+        .toggle-switch::after {
+            content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+            background: #fff; border-radius: 50%; transition: 0.3s;
+        }
+        input[type="checkbox"] { display: none; }
+        input[type="checkbox"]:checked + .toggle-switch { background: var(--accent-blue); }
+        input[type="checkbox"]:checked + .toggle-switch::after { transform: translateX(18px); }
+
+        select {
+            width: 100%; padding: 10px 12px; background: rgba(0,0,0,0.2); color: var(--text-main);
+            border: 1px solid var(--border-glass); border-radius: var(--radius-md); cursor: pointer;
+            font-size: 13px; appearance: none; outline: none; transition: all 0.2s;
+        }
+
+        #right-sidebar {
+            position: absolute; top: 20px; right: 20px; width: 320px; max-height: calc(100vh - 120px);
+            z-index: 999; display: flex; flex-direction: column;
+            transform: translateX(0); transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        #right-sidebar.collapsed { transform: translateX(120%); }
+        
+        .sidebar-toggle {
+            position: absolute; top: 20px; right: 20px; z-index: 998;
+            width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: var(--text-main); cursor: pointer; border: none;
+        }
+
+        .sidebar-content { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        .sidebar-content::-webkit-scrollbar { width: 4px; }
+        .sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+        .section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;}
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .stat-box { background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.05);}
+        .stat-val { font-size: 18px; font-weight: 700; margin-top: 4px; color: var(--text-main);}
+        .stat-unit { font-size: 12px; color: var(--text-muted); font-weight: normal; margin-left: 2px;}
+
+        .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .legend-item { display: flex; align-items: center; font-size: 12px; color: var(--text-muted); background: rgba(0,0,0,0.1); padding: 6px 8px; border-radius: 6px;}
+        .color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; flex-shrink: 0;}
+        
+        .action-btn {
+            background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid var(--border-glass);
+            padding: 10px 0; border-radius: var(--radius-md); cursor: pointer; font-size: 13px; font-weight: 500;
+            transition: all 0.2s; text-align: center; flex: 1; display: flex; justify-content: center; align-items: center; gap: 6px;
+        }
+        .action-btn:hover { background: rgba(255,255,255,0.15); }
+        .action-btn.danger { color: var(--accent-red); }
+
+        #mission-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); z-index: 2000; justify-content: center; align-items: center;
+            backdrop-filter: blur(8px); opacity: 0; transition: opacity 0.3s;
+        }
+        #mission-modal.show { opacity: 1; }
+        .modal-content {
+            background: rgba(28, 28, 32, 0.95); border: 1px solid var(--border-glass); border-radius: 20px;
+            width: 90%; max-width: 500px; max-height: 80vh; display: flex; flex-direction: column;
+        }
+        .modal-header { padding: 20px; text-align: center; border-bottom: 1px solid var(--border-glass); position: relative; }
+        .modal-header h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text-main); }
+        .close-btn { 
+            position: absolute; right: 15px; top: 15px; width: 30px; height: 30px; border-radius: 15px;
+            background: rgba(255,255,255,0.1); border: none; color: var(--text-muted); cursor: pointer; transition: 0.2s;
+        }
+        
+        .modal-body { padding: 0; overflow-y: auto; }
+        .init-loc-banner { background: rgba(10, 132, 255, 0.1); padding: 12px 20px; font-size: 13px; color: var(--accent-blue); text-align: center; border-bottom: 1px solid rgba(10,132,255,0.2);}
+        
+        .stop-card { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .stop-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .stop-badge { background: var(--text-main); color: #000; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+        .stop-name { font-size: 15px; font-weight: 600; color: var(--text-main); }
+        .stop-details { display: grid; grid-template-columns: 1fr; gap: 6px; font-size: 13px; color: var(--text-muted); margin-left: 36px;}
+        .detail-row { display: flex; gap: 8px; align-items: center; }
+
+        #playback-panel {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 600px; z-index: 1000;
+            display: flex; align-items: center; gap: 15px; padding: 12px 20px;
+            box-sizing: border-box;
+        }
+        .play-btn {
+            background: var(--accent-blue); color: white; border: none; width: 36px; height: 36px;
+            border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center;
+            font-size: 14px; transition: 0.2s; flex-shrink: 0;
+        }
+        .play-btn:hover { background: #0070e0; transform: scale(1.05); }
+        .slider-container { flex: 1; display: flex; align-items: center; gap: 10px; }
+        
+        input[type="range"] { 
+            -webkit-appearance: none; 
+            appearance: none; 
+            width: 100%; 
+            background: transparent; 
+        }
+        input[type="range"]::-webkit-slider-thumb { 
+            -webkit-appearance: none; 
+            appearance: none; 
+            height: 14px; 
+            width: 14px; 
+            border-radius: 50%; 
+            background: var(--text-main); 
+            cursor: pointer; 
+            margin-top: -5px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5); 
+        }
+        input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type="range"]:focus { outline: none; }
+        
+        .time-display { font-size: 12px; color: var(--text-main); font-family: 'SF Mono', Consolas, monospace; width: 65px; text-align: center;}
+        
+        .live-btn {
+            background: var(--accent-green); color: #000; border: none; border-radius: 12px;
+            padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; letter-spacing: 0.5px;
+        }
+        .live-btn:not(.active) { background: rgba(255,255,255,0.1); color: var(--text-main); }
+
+        .custom-tooltip {
+            background: rgba(28, 28, 32, 0.95);
+            border: 1px solid var(--border-glass);
+            border-radius: 8px;
+            color: var(--text-main);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            padding: 8px 12px;
+        }
+        .leaflet-tooltip.custom-tooltip::before { border-top-color: rgba(28, 28, 32, 0.95); }
+
+        .leaflet-control-attribution { display: none; }
+
+        @media (max-width: 768px) {
+            #top-nav { width: 90%; top: 10px; flex-wrap: wrap; justify-content: center; padding: 8px; border-radius: 15px; gap: 4px; }
+            .nav-brand { display: none; }
+            .nav-btn { font-size: 11px; padding: 6px 10px; flex: 1; justify-content: center; }
+            
+            #left-container { top: 100px; left: 10px; width: calc(100vw - 65px); gap: 10px; }
+            #live-panel, #sys-monitor { padding: 15px; }
+            
+            .sidebar-toggle { top: 100px; right: 10px; width: 40px; height: 40px; font-size: 16px; }
+            #right-sidebar { top: 100px; right: 10px; width: calc(100vw - 20px); }
+            
+            #playback-panel { bottom: 20px; padding: 10px 15px; gap: 8px; }
+            .time-display { font-size: 10px; width: 55px; }
+            
+            .modal-content { max-height: 90vh; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="top-nav" class="glass-panel">
+        <div class="nav-brand"><i class="fa-solid fa-satellite-dish"></i> SYS-TRACK</div>
+        <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.2); margin: 0 4px;"></div>
+        <button class="nav-btn" onclick="window.open('/api/log/all', '_blank')"><i class="fa-solid fa-align-left"></i> SYS Log</button>
+        <button class="nav-btn" onclick="window.open('/api/log/route', '_blank')"><i class="fa-solid fa-route"></i> Route Log</button>
+        <button class="nav-btn" onclick="window.open('/api/log/error', '_blank')"><i class="fa-solid fa-triangle-exclamation"></i> Errors</button>
+        <button class="nav-btn" onclick="window.open('/api/csv', '_blank')"><i class="fa-solid fa-file-csv"></i> CSV</button>
+        <button class="nav-btn primary" onclick="openMissionModal()"><i class="fa-solid fa-clipboard-list"></i> Schedule</button>
+    </div>
+
+    <div id="left-container">
+        <div id="live-panel" class="glass-panel">
+            <div class="status-header">
+                <span class="status-title" id="status-title-text">Current Status</span>
+                <div class="live-dot" id="indicator"></div>
+            </div>
+            <div id="action" class="action-text">Waiting...</div>
+            <div class="coords">
+                <i class="fa-solid fa-location-crosshairs" style="color: rgba(255,255,255,0.5); margin-right: 6px;"></i>
+                <span id="lat">--</span>, <span id="lng">--</span>
+            </div>
+            <label class="toggle-wrap">
+                <span><i class="fa-solid fa-video"></i> Auto Camera</span>
+                <input type="checkbox" id="autoFollow" checked>
+                <div class="toggle-switch"></div>
+            </label>
+            <label class="toggle-wrap" style="margin-bottom: 10px;">
+                <span><i class="fa-solid fa-location-dot"></i> Show Points</span>
+                <input type="checkbox" id="showPoints">
+                <div class="toggle-switch"></div>
+            </label>
+            <label class="toggle-wrap" style="margin-bottom: 0;">
+                <span><i class="fa-solid fa-route"></i> Show Route</span>
+                <input type="checkbox" id="showPlannedRoute" checked>
+                <div class="toggle-switch"></div>
+            </label>
+        </div>
+
+        <div id="sys-monitor" class="glass-panel">
+            <div class="status-header">
+                <span class="status-title">System Monitor</span>
+                <i class="fa-solid fa-server" style="color:var(--text-muted)"></i>
+            </div>
+            <div class="sys-data"><span>CPU Load</span><span class="sys-val" id="cpu-load">--%</span></div>
+            <div class="sys-data"><span>RAM Usage</span><span class="sys-val" id="ram-load">--%</span></div>
+            <div class="sys-data"><span>Registered</span><span class="sys-val" id="device-count">0</span></div>
+            <div class="sys-data"><span>Active Dev</span><span class="sys-val" id="active-device" style="color: var(--accent-green); font-family: monospace;">Idle</span></div>
+            <div class="sys-data"><span>Progress</span><span class="sys-val" id="mission-progress">-/-</span></div>
+            <div class="sys-data"><span>Target</span><span class="sys-val" id="mission-target" style="text-align: right; word-break: break-word; max-width: 65%; line-height: 1.3;">-</span></div>
+            <div class="url-box" id="tunnel-url">Tailscale P2P Active...</div>
+        </div>
+    </div>
+
+    <button class="sidebar-toggle glass-panel" id="sidebarBtn" onclick="toggleSidebar()">
+        <i class="fa-solid fa-sliders"></i>
+    </button>
+
+    <div id="right-sidebar" class="glass-panel collapsed">
+        <div class="sidebar-content">
+            
+            <div>
+                <div class="section-title"><i class="fa-solid fa-chart-pie"></i> Statistics</div>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="status-title" style="margin-bottom:2px;">Points</div>
+                        <div class="stat-val" id="totalPoints">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="status-title" style="margin-bottom:2px;">Distance</div>
+                        <div class="stat-val" id="totalDistance">0.00<span class="stat-unit">km</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title"><i class="fa-solid fa-layer-group"></i> Basemap</div>
+                <select id="mapLayerSelect">
+                    <option value="googleStreets" selected>Google Streets</option>
+                    <option value="osmDark">OSM Dark</option>
+                    <option value="cartoDark">CartoDB Dark</option>
+                </select>
+            </div>
+
+            <div>
+                <div class="section-title"><i class="fa-solid fa-filter"></i> Type Filter</div>
+                <select id="typeFilter" style="margin-bottom: 8px;">
+                    <option value="ALL">All Modes</option>
+                    <option value="walk">Walk</option>
+                    <option value="bus">Bus</option>
+                    <option value="mrt">MRT</option>
+                </select>
+            </div>
+
+            <div>
+                <div class="section-title"><i class="fa-solid fa-palette"></i> Legend</div>
+                <div id="legend" class="legend-grid"></div>
+            </div>
+            
+            <button id="clearTracks" class="action-btn danger"><i class="fa-solid fa-eraser"></i> Clear Traces</button>
+        </div>
+    </div>
+
+    <div id="mission-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Mission Schedule</h2>
+                <button class="close-btn" onclick="closeMissionModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" id="mission-body"></div>
+        </div>
+    </div>
+
+    <div id="playback-panel" class="glass-panel">
+        <button id="playPauseBtn" class="play-btn"><i class="fa-solid fa-play"></i></button>
+        <div class="slider-container">
+            <span id="playback-time" class="time-display">--:--:--</span>
+            <input type="range" id="timeSlider" min="0" max="100" value="100" step="1">
+            <span id="playback-end-time" class="time-display">--:--:--</span>
+        </div>
+        <button id="liveBtn" class="live-btn active">LIVE</button>
+    </div>
+
+    <div id="map"></div> 
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
+    <script>
+        function toggleSidebar() { 
+            document.getElementById('right-sidebar').classList.toggle('collapsed'); 
+        }
+
+        if (typeof L === 'undefined') {
+            alert('Leaflet library failed to load. Please check your internet connection or CDN availability.');
+            console.error('Leaflet is not defined!');
+        }
+
+        const map = L.map('map', {zoomControl: false}).setView([25.1673, 121.4466], 15);
+        L.control.zoom({position: 'bottomright'}).addTo(map);
+
+        const baseMaps = {
+            osmDark: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }),
+            cartoDark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }),
+            googleStreets: L.tileLayer('https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}', { maxZoom: 20 })
+        };
+        
+        let currentBaseLayer = baseMaps.googleStreets; 
+        currentBaseLayer.addTo(map);
+        
+        document.getElementById('mapLayerSelect').addEventListener('change', function(e) {
+            map.removeLayer(currentBaseLayer); 
+            currentBaseLayer = baseMaps[e.target.value]; 
+            currentBaseLayer.addTo(map);
+            if (e.target.value === 'osmDark') {
+                document.getElementById('map').classList.add('dark-filter');
+            } else {
+                document.getElementById('map').classList.remove('dark-filter');
+            }
+        });
+
+        let polylinesLayer = L.featureGroup().addTo(map);
+        let pointsLayer = L.featureGroup().addTo(map); 
+        let plannedRouteLayer = L.polyline([], {color: '#FF453A', weight: 5, opacity: 0.8, dashArray: '8, 8'}).addTo(map);
+        
+        let allRecords = [], isFirstLoad = true;
+        let isLive = true;
+        let isPlaying = false;
+        let playbackIndex = 0;
+        let playTimer = null;
+        
+        let totalLinesRead = 0;
+        let csvFetchInterval = 1000;
+        let csvFetchTimer = null;
+        
+        const timeSlider = document.getElementById('timeSlider');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const liveBtn = document.getElementById('liveBtn');
+        const playbackTimeEl = document.getElementById('playback-time');
+        const playbackEndTimeEl = document.getElementById('playback-end-time');
+
+        function fixLayerOrder() {
+            if (map.hasLayer(plannedRouteLayer)) {
+                plannedRouteLayer.bringToFront();
+            }
+            polylinesLayer.bringToFront();
+            if (document.getElementById('showPoints').checked) {
+                pointsLayer.bringToFront();
+            }
+        }
+
+        document.getElementById('showPlannedRoute').addEventListener('change', function(e) {
+            if (e.target.checked) {
+                map.addLayer(plannedRouteLayer);
+                if (window.plannedRouteDecorator) map.addLayer(window.plannedRouteDecorator);
+                fixLayerOrder();
+            } else {
+                map.removeLayer(plannedRouteLayer);
+                if (window.plannedRouteDecorator) map.removeLayer(window.plannedRouteDecorator);
+            }
+        });
+
+        function openMissionModal() {
+            const modal = document.getElementById('mission-modal');
+            modal.style.display = 'flex'; 
+            setTimeout(() => modal.classList.add('show'), 10);
+            
+            fetch('/api/mission').then(res => res.json()).then(data => {
+                const container = document.getElementById('mission-body');
+                if (!data || !data.stops || data.stops.length === 0) {
+                    container.innerHTML = '<div style="padding: 40px; text-align:center; color: #86868b;">No schedule received.</div>'; 
+                    return;
+                }
+                let html = `<div class="init-loc-banner"><i class="fa-solid fa-location-crosshairs"></i> Start: ${data.init_loc}</div>`;
+                data.stops.forEach((stop, idx) => {
+                    html += `
+                    <div class="stop-card">
+                        <div class="stop-card-header"><span class="stop-badge">${idx + 1}</span><span class="stop-name">${stop.name}</span></div>
+                        <div class="stop-details">
+                            <div class="detail-row"><i class="fa-solid fa-route"></i> Mode: ${stop.mode} ${stop.transit_type ? `[${stop.transit_type}]` : ''}</div>
+                            <div class="detail-row"><i class="fa-regular fa-clock"></i> Wait: ${stop.wait_time || 'None'}</div>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            }).catch(err => {
+                console.error("Failed to fetch mission data:", err);
+                document.getElementById('mission-body').innerHTML = '<div style="padding: 40px; text-align:center; color: var(--accent-red);">Failed to load schedule.</div>';
+            });
+        }
+
+        function closeMissionModal() { 
+            document.getElementById('mission-modal').classList.remove('show'); 
+            setTimeout(() => document.getElementById('mission-modal').style.display = 'none', 300); 
+        }
+
+        const getIconHtml = (faIcon) => `<div style="background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,0.2); border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; box-shadow:0 4px 10px rgba(0,0,0,0.3);"><i class="${faIcon}"></i></div>`;
+        const icons = {
+            walk: L.divIcon({html: getIconHtml('fa-solid fa-person-walking'), className: '', iconSize: [30, 30], iconAnchor: [15, 15]}),
+            bus: L.divIcon({html: getIconHtml('fa-solid fa-bus'), className: '', iconSize: [30, 30], iconAnchor: [15, 15]}),
+            mrt: L.divIcon({html: getIconHtml('fa-solid fa-train-subway'), className: '', iconSize: [30, 30], iconAnchor: [15, 15]}),
+            wait: L.divIcon({html: getIconHtml('fa-solid fa-hourglass-half'), className: '', iconSize: [30, 30], iconAnchor: [15, 15]})
+        };
+        let twinMarker = L.marker([0, 0], {icon: icons.walk}).addTo(map);
+
+        function categorizeAction(action) {
+            if (!action) return 'wait'; 
+            const a = action.toLowerCase();
+            if (a.includes('walk')) return 'walk'; 
+            if (a.includes('bus')) return 'bus'; 
+            if (a.includes('mrt') || a.includes('station')) return 'mrt';
+            return 'wait';
+        }
+
+        const colors = { walk: '#30D158', bus: '#FF9F0A', mrt: '#0A84FF', wait: '#BF5AF2', special: '#FF453A', guardian: '#86868b' };
+        
+        function getActionColorV2(action) {
+            const a = action.toLowerCase();
+            if (a.includes('precision') || a.includes('direct')) return colors.special;
+            if (a.includes('guardian')) return colors.guardian;
+            return colors[categorizeAction(action)];
+        }
+
+        const dataLeg = [{ name: "Walk", color: colors.walk }, { name: "MRT", color: colors.mrt }, { name: "Bus", color: colors.bus }, { name: "Wait", color: colors.wait }, { name: "Special", color: colors.special }, { name: "Guardian", color: colors.guardian }];
+        document.getElementById('legend').innerHTML = dataLeg.map(i => `<div class="legend-item"><div class="color-dot" style="background:${i.color};"></div>${i.name}</div>`).join('');
+
+        function calcDistKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; 
+            const dLat = (lat2 - lat1) * Math.PI / 180; 
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        let activePolyline = null;
+        let activePolylineColor = null;
+        let lastDrawnRecord = null;
+        let mapTotalDistance = 0;
+
+        function renderMapEngineIncremental(newRecords) {
+            const typeFilter = document.getElementById('typeFilter').value;
+            const showPts = document.getElementById('showPoints').checked; 
+
+            newRecords.forEach(record => {
+                if (typeFilter !== "ALL" && categorizeAction(record.action) !== typeFilter) return;
+
+                const latlng = [record.lat, record.lng];
+                const isContinuous = lastDrawnRecord && (record.originalIndex - lastDrawnRecord.originalIndex <= 2);
+                
+                if (isContinuous) mapTotalDistance += calcDistKm(lastDrawnRecord.lat, lastDrawnRecord.lng, record.lat, record.lng);
+                
+                const recColor = getActionColorV2(record.action);
+
+                if (!activePolyline || recColor !== activePolylineColor || !isContinuous) {
+                    let startPoints = isContinuous ? [[lastDrawnRecord.lat, lastDrawnRecord.lng], latlng] : [latlng];
+                    activePolyline = L.polyline(startPoints, { color: recColor, weight: 5, opacity: 0.85 }).addTo(polylinesLayer);
+                    activePolylineColor = recColor;
+                } else {
+                    activePolyline.addLatLng(latlng);
+                }
+
+                if (showPts) {
+                    let tooltipHtml = `
+                        <div style="text-align: left;">
+                            <div style="font-weight:bold; color:${recColor}; margin-bottom:4px; font-size:13px;">${record.action}</div>
+                            <div style="color: #ccc; font-size:11px;"><i class="fa-regular fa-clock"></i> ${record.time}</div>
+                        </div>
+                    `;
+                    L.circleMarker(latlng, {
+                        radius: 4, color: '#fff', weight: 1, fillColor: recColor, fillOpacity: 0.9
+                    }).bindTooltip(tooltipHtml, { className: 'custom-tooltip', direction: 'top', opacity: 1 }).addTo(pointsLayer);
+                }
+                lastDrawnRecord = record;
+            });
+
+            document.getElementById('totalPoints').innerText = allRecords.length.toLocaleString();
+            document.getElementById('totalDistance').innerHTML = `${mapTotalDistance.toFixed(2)}<span class="stat-unit">km</span>`;
+            fixLayerOrder();
+        }
+
+        function renderMapEngine() {
+            activePolyline = null;
+            activePolylineColor = null;
+            lastDrawnRecord = null;
+            mapTotalDistance = 0;
+            polylinesLayer.clearLayers(); 
+            pointsLayer.clearLayers(); 
+            if (allRecords.length > 0) {
+                renderMapEngineIncremental(allRecords);
+            }
+        }
+
+        document.getElementById('showPoints').addEventListener('change', renderMapEngine);
+
+        function extractTime(timestamp) {
+            return timestamp.includes(' ') ? timestamp.split(' ')[1] : timestamp;
+        }
+
+        function updatePlaybackState() {
+            if (allRecords.length === 0) return;
+            const rec = allRecords[playbackIndex];
+            
+            timeSlider.value = playbackIndex;
+            playbackTimeEl.innerText = extractTime(rec.time);
+            
+            document.getElementById('lat').innerText = rec.lat.toFixed(6); 
+            document.getElementById('lng').innerText = rec.lng.toFixed(6);
+            document.getElementById('action').innerText = rec.action; 
+
+            const indicator = document.getElementById('indicator');
+            const titleText = document.getElementById('status-title-text');
+            if (isLive) {
+                indicator.style.backgroundColor = 'var(--accent-green)';
+                indicator.style.boxShadow = '0 0 8px var(--accent-green)';
+                titleText.innerText = 'Current Status (LIVE)';
+            } else {
+                indicator.style.backgroundColor = 'var(--accent-orange)';
+                indicator.style.boxShadow = '0 0 8px var(--accent-orange)';
+                titleText.innerText = 'Historical Playback';
+            }
+            
+            twinMarker.setLatLng([rec.lat, rec.lng]).setIcon(icons[categorizeAction(rec.action)] || icons.walk);
+            
+            if (document.getElementById('autoFollow').checked) { 
+                map.panTo([rec.lat, rec.lng], {animate: true, duration: 0.8, easeLinearity: 0.1});
+            }
+        }
+
+        function toggleLiveMode(forceLive) {
+            isLive = forceLive !== undefined ? forceLive : !isLive;
+            if (isLive) {
+                liveBtn.classList.add('active');
+                if (isPlaying) togglePlay(); 
+                if (allRecords.length > 0) {
+                    playbackIndex = allRecords.length - 1;
+                    updatePlaybackState();
+                }
+            } else {
+                liveBtn.classList.remove('active');
+            }
+        }
+
+        function togglePlay() {
+            if (allRecords.length === 0) return;
+            isPlaying = !isPlaying;
+            
+            if (isPlaying) {
+                toggleLiveMode(false); 
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                if (playbackIndex >= allRecords.length - 1) playbackIndex = 0; 
+                
+                playTimer = setInterval(() => {
+                    if (playbackIndex < allRecords.length - 1) {
+                        playbackIndex++;
+                        updatePlaybackState();
+                    } else {
+                        togglePlay(); 
+                        toggleLiveMode(true); 
+                    }
+                }, 100); 
+            } else {
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+                clearInterval(playTimer);
+            }
+        }
+
+        playPauseBtn.addEventListener('click', togglePlay);
+        liveBtn.addEventListener('click', () => toggleLiveMode(true));
+
+        timeSlider.addEventListener('input', (e) => {
+            if (isPlaying) togglePlay(); 
+            toggleLiveMode(false);       
+            playbackIndex = parseInt(e.target.value);
+            updatePlaybackState();
+        });
+
+        function scheduleNextCSVFetch() {
+            csvFetchTimer = setTimeout(fetchCSVData, csvFetchInterval);
+        }
+
+        function fetchCSVData() {
+            fetch('/api/csv?start_line=' + totalLinesRead).then(r => {
+                if (r.status === 404) {
+                    csvFetchInterval = Math.min(csvFetchInterval * 1.5, 1500);
+                    scheduleNextCSVFetch();
+                    throw new Error('Not found');
+                }
+                if (!r.ok) throw new Error('HTTP Error ' + r.status);
+                csvFetchInterval = 1000; 
+                return r.text();
+            }).then(csvText => {
+                if (!csvText) { scheduleNextCSVFetch(); return; }
+                const lines = csvText.trim().split('\n').filter(l => l.length > 0);
+                if (lines.length === 0) { scheduleNextCSVFetch(); return; }
+                
+                let newRecords = [];
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    if (totalLinesRead === 0 && i === 0 && line.startsWith("Timestamp")) {
+                        totalLinesRead++;
+                        continue; 
+                    }
+                    const cols = line.split(',');
+                    if (cols.length >= 4) {
+                        const timeStr = cols[0];
+                        const lat = parseFloat(cols[1]), lng = parseFloat(cols[2]), action = cols[3].replace(/"/g, '');
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            newRecords.push({ originalIndex: totalLinesRead, time: timeStr, lat, lng, action });
+                        }
+                    }
+                    totalLinesRead++;
+                }
+                
+                if (newRecords.length > 0) {
+                    if (isFirstLoad) {
+                        allRecords = newRecords;
+                        renderMapEngine(); 
+                    } else {
+                        allRecords.push(...newRecords);
+                        renderMapEngineIncremental(newRecords);
+                    }
+                    
+                    timeSlider.max = allRecords.length - 1;
+                    playbackEndTimeEl.innerText = extractTime(allRecords[allRecords.length - 1].time);
+                    
+                    if (isLive) {
+                        playbackIndex = allRecords.length - 1;
+                        updatePlaybackState();
+                    } else if (playbackIndex >= allRecords.length) {
+                        playbackIndex = Math.max(0, allRecords.length - 1);
+                        updatePlaybackState();
+                    }
+                    
+                    if (isFirstLoad) {
+                        isFirstLoad = false;
+                        if (allRecords.length > 0 && document.getElementById('autoFollow').checked) {
+                            map.panTo([allRecords[allRecords.length - 1].lat, allRecords[allRecords.length - 1].lng], {animate: true, duration: 1});
+                        }
+                    }
+                }
+                scheduleNextCSVFetch();
+            }).catch(err => {
+                if (err.message !== 'Not found') {
+                    console.error("CSV fetch error:", err);
+                    scheduleNextCSVFetch(); // Ensure loop continues even on network error
+                }
+            });
+        }
+
+        function fetchSysStatus() {
+            fetch('/api/system_status').then(r=>r.json()).then(d => {
+                document.getElementById('cpu-load').innerText = d.cpu + '%';
+                document.getElementById('ram-load').innerText = d.ram + '%';
+                document.getElementById('device-count').innerText = d.devices || '0';
+                
+                const activeDevElem = document.getElementById('active-device');
+                if (d.active_device) {
+                    activeDevElem.innerText = d.active_device.substring(0, 8);
+                    activeDevElem.style.color = 'var(--accent-green)';
+                } else {
+                    activeDevElem.innerText = 'Idle';
+                    activeDevElem.style.color = 'var(--text-muted)';
+                }
+
+                document.getElementById('mission-progress').innerText = `${d.mission_stats.completed_stops}/${d.mission_stats.total_stops}`;
+                document.getElementById('mission-target').innerText = d.mission_stats.current_target || 'Idle';
+                document.getElementById('tunnel-url').innerText = d.p2p_target ? `P2P Target: ${d.p2p_target}` : 'Tailscale Standby';
+            }).catch(err => console.error("System status fetch error:", err));
+            
+            fetch('/api/planned_route').then(r=>r.json()).then(pts => {
+                if(pts && pts.length > 0) {
+                    let latlngs = pts.map(p => [p.lat, p.lng]);
+                    plannedRouteLayer.setLatLngs(latlngs);
+                    
+                    if (window.plannedRouteDecorator) {
+                        map.removeLayer(window.plannedRouteDecorator);
+                    }
+                    window.plannedRouteDecorator = L.polylineDecorator(plannedRouteLayer, {
+                        patterns: [
+                            { offset: 25, repeat: 100, symbol: L.Symbol.arrowHead({pixelSize: 12, polygon: false, pathOptions: {stroke: true, weight: 2, color: '#FF453A'}}) }
+                        ]
+                    });
+                    
+                    if (document.getElementById('showPlannedRoute').checked) {
+                        if (!map.hasLayer(plannedRouteLayer)) map.addLayer(plannedRouteLayer);
+                        map.addLayer(window.plannedRouteDecorator);
+                    } else {
+                        map.removeLayer(plannedRouteLayer);
+                        map.removeLayer(window.plannedRouteDecorator);
+                    }
+                    fixLayerOrder();
+                } else {
+                    plannedRouteLayer.setLatLngs([]);
+                    if (window.plannedRouteDecorator) {
+                        map.removeLayer(window.plannedRouteDecorator);
+                        window.plannedRouteDecorator = null;
+                    }
+                }
+            }).catch(err => console.error("Planned route fetch error:", err));
+        }
+
+        document.getElementById('typeFilter').addEventListener('change', renderMapEngine);
+        document.getElementById('clearTracks').addEventListener('click', () => { 
+            polylinesLayer.clearLayers(); 
+            pointsLayer.clearLayers(); 
+            activePolyline = null;
+            activePolylineColor = null;
+            lastDrawnRecord = null;
+            mapTotalDistance = 0;
+            document.getElementById('totalPoints').innerText = '0';
+            document.getElementById('totalDistance').innerHTML = '0.00<span class="stat-unit">km</span>';
+        });
+        
+        scheduleNextCSVFetch();
+        setInterval(fetchSysStatus, 1000); // 每秒更新系統狀態
+    </script>
+</body>
+</html>
