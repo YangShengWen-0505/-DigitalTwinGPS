@@ -1,22 +1,20 @@
-# DigitalTwinGPS — Caddy Reverse Proxy 設定 (P4)
+# DigitalTwinGPS Caddy reverse proxy example.
 #
-# 使用方式：
-#   1. 安裝 Caddy: https://caddyserver.com/docs/install
-#   2. 在 .env 中設定 USE_CADDY=true
-#   3. 先啟動 Flask: python run_server.py
-#   4. 再啟動 Caddy: caddy run --config Caddyfile
+# Usage:
+# 1. Install Caddy.
+# 2. Set USE_CADDY="true" in .env.
+# 3. Start Flask with: python run_server.py
+# 4. Start Caddy with: caddy run --config Caddyfile
 #
-# Caddy 會自動申請 Let's Encrypt 憑證（需要對外 IP + 正式 Domain）
-# 若在內網/Tailscale 使用，改用下方 tls internal 區段（自簽但受信任）
+# Replace <PC_TAILSCALE_IP> with this PC's Tailscale IP or use a trusted
+# MagicDNS/domain name. Keep this service inside Tailscale or a trusted LAN.
 
 {
-    # 全域設定：關閉自動 HTTPS 重新導向（可依需求開啟）
+    # Optional when using a public domain and Let's Encrypt.
     # email your@email.com
 }
 
-# --- 選項 A：使用 Tailscale 或內網（自簽但受 Caddy 管理的憑證）---
-# 綁定到具體 Tailscale IP（PC_TAILSCALE_IP），避免攔截伺服器上所有其他站點
-100.127.146.60:443 {
+<PC_TAILSCALE_IP>:443 {
     tls internal
 
     reverse_proxy localhost:5050
@@ -27,12 +25,11 @@
     }
 }
 
-# HTTP -> HTTPS 重新導向
 :80 {
     redir https://{host}{uri} permanent
 }
 
-# --- 選項 B：有正式 Domain + Let's Encrypt（取消下方註解並填入 Domain）---
+# Public-domain example:
 # your.domain.com {
-#     reverse_proxy localhost:5000
+#     reverse_proxy localhost:5050
 # }

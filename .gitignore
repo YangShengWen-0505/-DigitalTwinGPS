@@ -1,4 +1,4 @@
-# --- Python 相關 ---
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,20 +8,21 @@ ENV/
 build/
 dist/
 
-# --- 專案特定設定 ---
-# 絕對不可上傳的環境變數檔案 (包含 API Key)
+# Local secrets
 .env
+.env.*
+!.env.example
 
-# 排除執行產生的日誌與數據檔
+# Runtime logs and generated mission data
 logs/
 *.log
 *.csv
 
-# --- IDE 與系統檔 ---
+# IDE and OS metadata
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-# --- Docker 相關 ---
+# Dev Container local metadata
 .devcontainer/.DS_Store

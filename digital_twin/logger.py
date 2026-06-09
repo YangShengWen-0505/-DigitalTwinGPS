@@ -1,141 +1,273 @@
-import os, csv, sys, logging, threading
+import csv
+import json
+import logging
+import os
+import sys
+import threading
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
-current_csv_file = None
-_csv_file_handle = None   # P11: 持久化檔案 Handle
-_csv_writer      = None   # P11: 持久化 csv.writer
-_csv_lock        = threading.Lock()  # P11: 寫入互斥鎖
-sys_logger  = None
-route_logger = None
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+LOG_ROOT = BASE_DIR / "logs"
+
+current_session_dir: Optional[Path] = None
+current_csv_file: Optional[Path] = None
+
+_csv_file_handle = None
+_csv_writer = None
+_csv_lock = threading.Lock()
+_handler_lock = threading.Lock()
+
+sys_logger = logging.getLogger("DigitalTwin.system")
+route_logger = logging.getLogger("DigitalTwin.route")
+security_logger = logging.getLogger("DigitalTwin.security")
+
 
 class TerminalFilter(logging.Filter):
-    def filter(self, record):
-        if record.levelno >= logging.CRITICAL: return True
-        if record.name == "RouteLogger": return True
-        return False
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.WARNING or record.name == route_logger.name
 
-# ── M-3: 私有工廠輔助函式，消除 init_logs / init_server_logs 之間的重複邏輯 ──
 
-def _make_file_handler(filepath: str, level: int, formatter: logging.Formatter) -> logging.FileHandler:
-    """建立並回傳一個檔案 Handler。"""
-    h = logging.FileHandler(filepath, encoding='utf-8')
-    h.setLevel(level)
-    h.setFormatter(formatter)
-    return h
+def _formatter(with_date: bool = False) -> logging.Formatter:
+    datefmt = "%Y-%m-%d %H:%M:%S" if with_date else "%H:%M:%S"
+    return logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt=datefmt)
 
-def _make_term_handler(formatter: logging.Formatter) -> logging.StreamHandler:
-    """建立並回傳一個套用 TerminalFilter 的 stdout Handler。"""
-    h = logging.StreamHandler(sys.stdout)
-    h.setLevel(logging.INFO)
-    h.setFormatter(formatter)
-    h.addFilter(TerminalFilter())
-    return h
 
-def _attach_handlers(logger_obj: logging.Logger, handlers: list, level: int = logging.DEBUG) -> None:
-    """清除舊 Handler 並將新 Handler 列表掛載到 logger。"""
-    for old_h in logger_obj.handlers[:]:
-        old_h.close()
-        logger_obj.removeHandler(old_h)
+def _file_handler(path: Path, level: int, with_date: bool = False) -> logging.FileHandler:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setLevel(level)
+    handler.setFormatter(_formatter(with_date=with_date))
+    return handler
+
+
+def _terminal_handler() -> logging.StreamHandler:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.addFilter(TerminalFilter())
+    return handler
+
+
+def _attach_handlers(logger_obj: logging.Logger, handlers: list[logging.Handler], level: int = logging.DEBUG) -> None:
+    for old_handler in logger_obj.handlers[:]:
+        old_handler.close()
+        logger_obj.removeHandler(old_handler)
     logger_obj.setLevel(level)
     logger_obj.propagate = False
-    for h in handlers:
-        logger_obj.addHandler(h)
+    for handler in handlers:
+        logger_obj.addHandler(handler)
 
-# ─────────────────────────────────────────────────────────────────────────────
 
-def init_logs():
-    global current_csv_file, sys_logger, route_logger
+def init_server_logs() -> None:
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    server_log = LOG_ROOT / "server.log"
+    security_log = LOG_ROOT / "security.log"
+    term = _terminal_handler()
+    with _handler_lock:
+        _attach_handlers(sys_logger, [_file_handler(server_log, logging.DEBUG, with_date=True), term])
+        _attach_handlers(security_logger, [_file_handler(security_log, logging.INFO, with_date=True)])
 
-    try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        log_dir = os.path.join(base_dir, "logs")
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        time_str = datetime.now().strftime("%H-%M-%S")
 
-        task_folder = os.path.join(log_dir, today_str, time_str)
-        os.makedirs(task_folder, exist_ok=True)
-
-        all_log_file   = os.path.join(task_folder, "all.log")
-        err_log_file   = os.path.join(task_folder, "error.log")
-        route_log_file = os.path.join(task_folder, "route.log")
-        current_csv_file = os.path.join(task_folder, "movement.csv")
-
-        # P11: 關閉舊的 CSV Handle（若有），再開啟新的持久 Handle
-        global _csv_file_handle, _csv_writer
+def _close_csv() -> None:
+    global _csv_file_handle, _csv_writer
+    with _csv_lock:
         if _csv_file_handle:
             try:
                 _csv_file_handle.flush()
                 _csv_file_handle.close()
-            except Exception:
-                pass
-        _csv_file_handle = open(current_csv_file, mode='w', newline='', encoding='utf-8')
+            finally:
+                _csv_file_handle = None
+                _csv_writer = None
+
+
+def init_task_logs() -> dict[str, str]:
+    global current_session_dir, current_csv_file, _csv_file_handle, _csv_writer
+
+    _close_csv()
+    now = datetime.now()
+    current_session_dir = LOG_ROOT / now.strftime("%Y-%m-%d") / now.strftime("%H-%M-%S")
+    current_session_dir.mkdir(parents=True, exist_ok=True)
+    current_csv_file = current_session_dir / "movement.csv"
+
+    with _csv_lock:
+        _csv_file_handle = current_csv_file.open(mode="w", newline="", encoding="utf-8")
         _csv_writer = csv.writer(_csv_file_handle)
         _csv_writer.writerow(["Timestamp", "Latitude", "Longitude", "Action", "Note"])
         _csv_file_handle.flush()
 
-        file_fmt = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
-        term_fmt = logging.Formatter('%(message)s')
+    all_log = current_session_dir / "all.log"
+    route_log = current_session_dir / "route.log"
+    error_log = current_session_dir / "error.log"
+    security_log = current_session_dir / "security.log"
+    sys_term = _terminal_handler()
+    route_term = _terminal_handler()
 
-        all_h   = _make_file_handler(all_log_file,   logging.DEBUG,   file_fmt)
-        err_h   = _make_file_handler(err_log_file,   logging.WARNING, file_fmt)
-        route_h = _make_file_handler(route_log_file, logging.INFO,    file_fmt)
-        term_h  = _make_term_handler(term_fmt)
+    with _handler_lock:
+        all_handler = _file_handler(all_log, logging.DEBUG)
+        error_handler = _file_handler(error_log, logging.WARNING)
+        _attach_handlers(sys_logger, [all_handler, error_handler, sys_term])
+        _attach_handlers(route_logger, [_file_handler(route_log, logging.INFO), _file_handler(all_log, logging.INFO), route_term])
+        _attach_handlers(security_logger, [_file_handler(security_log, logging.INFO), _file_handler(all_log, logging.INFO)])
 
-        if not sys_logger:
-            sys_logger = logging.getLogger("SystemLogger")
-        _attach_handlers(sys_logger, [all_h, err_h, term_h])
+    log_sys(f"Task log session created: {current_session_dir}", "info")
+    return get_log_status()
 
-        if not route_logger:
-            route_logger = logging.getLogger("RouteLogger")
-        _attach_handlers(route_logger, [all_h, route_h, term_h], level=logging.INFO)
 
-        log_sys(f"=== Dedicated task log created ({today_str}/{time_str}) ===", "info")
-    except Exception as e:
-        print(f"[FATAL] Failed to initialize logs: {e}", file=sys.stderr)
+def get_log_status() -> dict[str, str | None]:
+    return {
+        "session_dir": str(current_session_dir) if current_session_dir else None,
+        "movement_csv": str(current_csv_file) if current_csv_file else None,
+    }
 
-def log_sys(message, level="info"):
-    if not sys_logger: return
-    level = level.lower()
-    if level == "debug":    sys_logger.debug(message)
-    elif level == "info":   sys_logger.info(message)
-    elif level == "warning": sys_logger.warning(message)
-    elif level == "error":   sys_logger.error(f"Error occurred: {message}")
-    elif level == "critical": sys_logger.critical(f"\n[CRITICAL SYSTEM ERROR] {message}\n")
 
-def log_route(message):
-    if not route_logger: return
-    route_logger.info(f"[ROUTE] {message}")
+def write_mission_snapshot(mission: dict) -> None:
+    if not current_session_dir:
+        return
+    try:
+        snapshot = {
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "mission": mission,
+        }
+        (current_session_dir / "mission.json").write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        log_sys(f"Mission snapshot write failed: {exc}", "warning")
 
-def log_movement(lat, lng, action, note=""):
-    """P11: 使用持久 Handle 避免每次寫入都重新開啟檔案"""
+
+def _resolve_history_session(date_value: str, session_value: str) -> Path:
+    if not date_value or not session_value:
+        raise FileNotFoundError("History session not found")
+    session_dir = (LOG_ROOT / date_value / session_value).resolve()
+    root = LOG_ROOT.resolve()
+    if root not in session_dir.parents:
+        raise FileNotFoundError("History session not found")
+    if not session_dir.exists() or not session_dir.is_dir():
+        raise FileNotFoundError("History session not found")
+    return session_dir
+
+
+def list_history_sessions(limit: int = 100) -> list[dict]:
+    sessions: list[dict] = []
+    if not LOG_ROOT.exists():
+        return sessions
+
+    for date_dir in sorted(LOG_ROOT.iterdir(), reverse=True):
+        if not date_dir.is_dir():
+            continue
+        for session_dir in sorted(date_dir.iterdir(), reverse=True):
+            if not session_dir.is_dir():
+                continue
+            movement_csv = session_dir / "movement.csv"
+            if not movement_csv.exists():
+                continue
+
+            metadata = {}
+            mission_file = session_dir / "mission.json"
+            if mission_file.exists():
+                try:
+                    metadata = json.loads(mission_file.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    metadata = {}
+
+            stat = movement_csv.stat()
+            sessions.append({
+                "date": date_dir.name,
+                "session": session_dir.name,
+                "id": f"{date_dir.name}/{session_dir.name}",
+                "created_at": metadata.get("created_at"),
+                "start": metadata.get("mission", {}).get("init_loc", ""),
+                "stops": len(metadata.get("mission", {}).get("stops", [])),
+                "csv_size": stat.st_size,
+                "updated_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            })
+            if len(sessions) >= limit:
+                return sessions
+    return sessions
+
+
+def read_history_csv(date_value: str, session_value: str, start_line: int = 0) -> str:
+    session_dir = _resolve_history_session(date_value, session_value)
+    path = session_dir / "movement.csv"
+    if not path.exists():
+        raise FileNotFoundError("History CSV not found")
+    start_line = max(0, start_line)
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return "".join(handle.readlines()[start_line:])
+
+
+def read_history_log(date_value: str, session_value: str, log_name: str) -> str:
+    session_dir = _resolve_history_session(date_value, session_value)
+    filename = {
+        "all": "all.log",
+        "route": "route.log",
+        "error": "error.log",
+        "security": "security.log",
+    }.get(log_name)
+    if not filename:
+        raise ValueError("Unsupported log name")
+    path = session_dir / filename
+    if not path.exists():
+        raise FileNotFoundError("History log not found")
+    return path.read_text(encoding="utf-8")
+
+
+def read_current_log(log_name: str) -> str:
+    if not current_session_dir:
+        raise FileNotFoundError("Task not started")
+
+    filename = {
+        "all": "all.log",
+        "route": "route.log",
+        "error": "error.log",
+        "security": "security.log",
+    }.get(log_name)
+    if not filename:
+        raise ValueError("Unsupported log name")
+
+    path = current_session_dir / filename
+    if not path.exists():
+        raise FileNotFoundError("Log file not found")
+    return path.read_text(encoding="utf-8")
+
+
+def read_current_csv(start_line: int = 0) -> str:
+    if not current_csv_file or not current_csv_file.exists():
+        raise FileNotFoundError("No movement data")
+    start_line = max(0, start_line)
+    with _csv_lock:
+        with current_csv_file.open("r", encoding="utf-8", newline="") as handle:
+            return "".join(handle.readlines()[start_line:])
+
+
+def log_sys(message: str, level: str = "info") -> None:
+    log_method = getattr(sys_logger, level.lower(), sys_logger.info)
+    log_method(message)
+
+
+def log_route(message: str) -> None:
+    route_logger.info("[ROUTE] %s", message)
+
+
+def log_security(message: str, level: str = "info") -> None:
+    log_method = getattr(security_logger, level.lower(), security_logger.info)
+    log_method(message)
+
+
+def log_movement(lat: float, lng: float, action: str, note: str = "") -> None:
     if not _csv_writer or not _csv_file_handle:
         return
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with _csv_lock:
-            _csv_writer.writerow([timestamp, lat, lng, action, note])
+            _csv_writer.writerow([timestamp, f"{float(lat):.7f}", f"{float(lng):.7f}", action, note])
             _csv_file_handle.flush()
-    except Exception as e:
-        log_sys(f"CSV write failed: {e}", "error")
+    except Exception as exc:
+        log_sys(f"CSV write failed: {exc}", "error")
 
-def init_server_logs():
-    """伺服器啟動時初始化全域日誌（使用共用輔助函式）。"""
-    global sys_logger
-    if sys_logger: return
 
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(base_dir, "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    server_log_file = os.path.join(log_dir, "server.log")
-
-    file_fmt = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    term_fmt = logging.Formatter('%(message)s')
-
-    srv_h  = _make_file_handler(server_log_file, logging.DEBUG, file_fmt)
-    term_h = _make_term_handler(term_fmt)
-
-    sys_logger = logging.getLogger("SystemLogger")
-    _attach_handlers(sys_logger, [srv_h, term_h])
-
-# 系統啟動時自動初始化全域日誌
 init_server_logs()

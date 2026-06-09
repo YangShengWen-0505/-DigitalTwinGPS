@@ -1,16 +1,13 @@
-version: '3.8'
-name: DigitalTwinGPS
-
+version: "3.8"
+name: digitaltwingps
 
 services:
-  app:
+  run-server:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
-    container_name: DigitalTwinGPS
+    command: sleep infinity
     ports:
-      # 使用 ${VAR:-default} 語法，確保變數缺失時不會報錯
-      # 這樣即使 .env 解析失敗，也會預設使用 5050
       - "${FLASK_PORT:-5050}:${FLASK_PORT:-5050}"
     env_file:
       - ../.env

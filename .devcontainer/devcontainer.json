@@ -3,9 +3,10 @@
     "dockerComposeFile": [
         "docker-compose.yml"
     ],
-    "service": "app",
+    "service": "run-server",
     "workspaceFolder": "/workspace",
     "overrideCommand": true,
+    "shutdownAction": "stopCompose",
     "customizations": {
         "vscode": {
             "extensions": [
