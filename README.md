@@ -391,6 +391,10 @@ python run_server.py
 python -m py_compile run_server.py digital_twin/__init__.py digital_twin/config.py digital_twin/logger.py digital_twin/state.py digital_twin/api/middleware.py digital_twin/api/routes.py digital_twin/core/navigation.py
 ```
 
+## 授權
+
+本專案採用 MIT License，詳細內容請見 [LICENSE](LICENSE)。
+
 ## 作者
 
 Yang Sheng-Wen
