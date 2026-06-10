@@ -6,6 +6,8 @@ from typing import Optional
 last_sent_coords: dict[str, Optional[float]] = {"lat": None, "lng": None}
 drift_state: dict[str, float] = {"lat": 0.0, "lng": 0.0}
 
+# Worker threads receive the generation they were created with. Bumping this
+# value is the cooperative cancellation signal for older mission workers.
 mission_generation: int = 0
 mission_active: bool = False
 mission_started_at: Optional[float] = None
@@ -30,6 +32,8 @@ mission_stats: dict[str, int | float | str | None] = {
 
 
 def reset_runtime_position() -> None:
+    # Reset only runtime drift/position data; mission metadata is managed by
+    # start_mission(), stop_mission(), and complete_mission().
     with coord_lock:
         last_sent_coords.update({"lat": None, "lng": None})
         drift_state.update({"lat": 0.0, "lng": 0.0})

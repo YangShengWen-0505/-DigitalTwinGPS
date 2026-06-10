@@ -27,6 +27,8 @@ security_logger = logging.getLogger("DigitalTwin.security")
 
 class TerminalFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        # Keep the terminal focused on operator-facing route events and warnings;
+        # detailed request/debug output still goes to file handlers.
         return record.levelno >= logging.WARNING or record.name == route_logger.name
 
 
@@ -52,6 +54,8 @@ def _terminal_handler() -> logging.StreamHandler:
 
 
 def _attach_handlers(logger_obj: logging.Logger, handlers: list[logging.Handler], level: int = logging.DEBUG) -> None:
+    # Handlers are replaced when a new mission session starts so each task gets
+    # its own all/route/error/security files.
     for old_handler in logger_obj.handlers[:]:
         old_handler.close()
         logger_obj.removeHandler(old_handler)
@@ -76,6 +80,8 @@ def _close_csv() -> None:
     with _csv_lock:
         if _csv_file_handle:
             try:
+                # Flush before rotating sessions so history playback never sees
+                # a partially buffered movement.csv.
                 _csv_file_handle.flush()
                 _csv_file_handle.close()
             finally:
@@ -86,6 +92,8 @@ def _close_csv() -> None:
 def init_task_logs() -> dict[str, str]:
     global current_session_dir, current_csv_file, _csv_file_handle, _csv_writer
 
+    # Each mission owns a timestamped directory to make history browsing and
+    # troubleshooting independent from later restarts.
     _close_csv()
     now = datetime.now()
     current_session_dir = LOG_ROOT / now.strftime("%Y-%m-%d") / now.strftime("%H-%M-%S")
@@ -144,6 +152,7 @@ def _resolve_history_session(date_value: str, session_value: str) -> Path:
         raise FileNotFoundError("History session not found")
     session_dir = (LOG_ROOT / date_value / session_value).resolve()
     root = LOG_ROOT.resolve()
+    # Resolve and check ancestry to prevent path traversal through history APIs.
     if root not in session_dir.parents:
         raise FileNotFoundError("History session not found")
     if not session_dir.exists() or not session_dir.is_dir():

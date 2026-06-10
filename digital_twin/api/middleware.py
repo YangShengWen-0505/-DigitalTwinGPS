@@ -14,6 +14,7 @@ def mask_secret(value: str | None) -> str:
 
 def has_valid_api_key() -> bool:
     api_key = request.headers.get("X-API-Key", "")
+    # Constant-time comparison avoids leaking secret validity through timing.
     return bool(api_key) and hmac.compare_digest(api_key, config.API_SECRET_KEY)
 
 
@@ -29,6 +30,8 @@ def require_api_key(allow_session: bool = True):
                 return f(*args, **kwargs)
 
             logger.log_security(
+                # Store only a masked key prefix so security logs remain useful
+                # without becoming a source of credential disclosure.
                 f"Unauthorized request: {request.method} {request.path} "
                 f"from {request.remote_addr}; key={mask_secret(request.headers.get('X-API-Key'))}",
                 "warning",

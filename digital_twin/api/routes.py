@@ -107,6 +107,7 @@ def logout():
 @api_bp.route("/stop_task", methods=["GET", "POST"])
 @require_api_key(allow_session=False)
 def stop_task_route():
+    # Increment first so active worker threads observe cancellation quickly.
     state.mission_generation += 1
     logger.log_sys("Mission abort command received. Cleaning up.", "warning")
     state.stop_mission("aborted")
@@ -123,6 +124,9 @@ def start_task():
         return jsonify({"error": str(exc)}), 400
 
     previous_was_active = state.mission_active
+    # A new start request intentionally supersedes any active mission. The
+    # generation bump asks older workers to exit before the new log session is
+    # created, which keeps session boundaries readable.
     state.mission_generation += 1
     current_gen = state.mission_generation
     if previous_was_active:

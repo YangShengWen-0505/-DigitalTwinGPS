@@ -28,6 +28,8 @@ def create_app():
 
     @app.before_request
     def log_request_info():
+        # The dashboard polls these read-only endpoints frequently; keeping
+        # them out of all.log makes mission events much easier to audit.
         if request.method == "GET" and (
             request.path in NOISY_GET_PATHS or request.path.startswith("/static/")
         ):
@@ -41,6 +43,8 @@ def create_app():
 
     @app.after_request
     def add_security_headers(response):
+        # Keep browser-facing defaults strict because this app is normally
+        # exposed over Tailscale and authenticated with a shared API key.
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")

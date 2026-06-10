@@ -60,6 +60,9 @@ def send_to_agent(lat: float, lng: float, action_name: str = "Unknown") -> None:
             logger.log_sys("PHONE_TAILSCALE_IP is not configured; skipped phone update.", "warning")
             return
         try:
+            # MacroDroid exposes a small HTTP server on the phone over Tailscale.
+            # Query parameters are used because the phone-side macro maps them
+            # directly into local variables.
             http_session.get(f"http://{config.PHONE_TAILSCALE_IP}:8080/gps", params=params, timeout=2.0)
         except requests.exceptions.Timeout:
             logger.log_sys("P2P timeout while sending GPS command.", "warning")
@@ -102,6 +105,9 @@ def location_guardian_thread(my_generation: int) -> None:
             continue
         if state.last_sent_coords["lat"] is None or state.last_sent_coords["lng"] is None:
             continue
+        # Some Android mock-location stacks stop updating when no fresh intent
+        # arrives. Guardian resends the last known coordinate without changing
+        # the route state.
         send_to_agent(state.last_sent_coords["lat"], state.last_sent_coords["lng"], "Guardian Auto-fix")
         last_guard_sent = time.time()
         guard_backoff = min(guard_backoff + 1.0, 10.0)
@@ -119,6 +125,8 @@ def _route_segments(points: list[tuple[float, float]]) -> tuple[list[float], flo
 def _maybe_wait_for_station(mode_name: str, lat: float, lng: float, visited_stations: set[str], my_generation: int) -> None:
     if "Taking MRT" not in mode_name:
         return
+    # MRT station stops are simulated only for MRT movement; user-defined custom
+    # station groups were removed because non-MRT modes should move continuously.
     detection_radius = max(50, 50 * config.SPEED_MULTIPLIER)
     for station_name, station_coord in config.MRT_STATIONS_DB.items():
         if station_name in visited_stations:
@@ -134,6 +142,8 @@ def smooth_move_v2(points: list[tuple[float, float]], total_duration_sec: float,
     if len(points) < 2 or my_generation != state.mission_generation:
         return
 
+    # Every long-running movement loop is generation-gated so stop/restart can
+    # interrupt it without forcefully killing Python threads.
     state.drift_state.update({"lat": 0.0, "lng": 0.0})
     real_duration = max(0.1, total_duration_sec / config.SPEED_MULTIPLIER)
     segment_dists, total_dist = _route_segments(points)
@@ -303,6 +313,8 @@ def smart_navigate(start_loc: str, end_loc: str, force_mode: str, transit_type: 
                 transit = step["transit_details"]
                 line = transit["line"].get("short_name", "Transit")
                 vehicle_type = transit["line"].get("vehicle", {}).get("type", "")
+                # AUTO transit accepts Google's route choice, while MRT/BUS
+                # requests bias selection before this step is interpreted.
                 mode_msg = f"Taking MRT {line}" if vehicle_type == "SUBWAY" else f"Taking Bus {line}"
                 departure = transit.get("departure_time", {}).get("value")
                 if departure:
@@ -338,6 +350,8 @@ def smart_wait(time_str: str, skip_if_late: bool, my_generation: int) -> None:
 
 
 def mission_task(init_loc_str: str, stops: list[dict], my_generation: int) -> None:
+    # The guardian shares the mission generation so it exits with the same
+    # cooperative cancellation signal as the main route worker.
     threading.Thread(target=location_guardian_thread, args=(my_generation,), daemon=True).start()
     state.mission_stats.update({"total_stops": len(stops), "completed_stops": 0, "status": "running"})
 

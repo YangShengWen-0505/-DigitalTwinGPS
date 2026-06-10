@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DigitalTwinGPS 登入</title>
+    <title>DigitalTwinGPS Sign In</title>
     <style>
         :root {
             --bg: #090b0f;
@@ -69,11 +69,11 @@
 <body>
     <main>
         <h1>DigitalTwinGPS</h1>
-        <p>請輸入 `.env` 內的 API_SECRET_KEY 以進入監控台。</p>
+        <p>Enter the API_SECRET_KEY from your .env file to open the dashboard.</p>
         <form method="post" action="/login">
             <label for="api_key">API Key</label>
             <input id="api_key" name="api_key" type="password" autocomplete="current-password" required autofocus>
-            <button type="submit">登入監控台</button>
+            <button type="submit">Sign In</button>
             <div class="error">{{ error }}</div>
         </form>
     </main>

@@ -28,10 +28,10 @@ if __name__ == "__main__":
 
     try:
         if use_caddy:
-            # Caddy 模式 — Flask 只聽 localhost HTTP，TLS 由 Caddy 處理
+            # In Caddy mode, Flask only listens on localhost HTTP; Caddy owns TLS.
             app.run(port=flask_port, host='127.0.0.1', use_reloader=False)
         else:
-            # 開發模式：使用 adhoc 自簽憑證，監聽所有網路介面
+            # Development mode uses an adhoc self-signed certificate on all interfaces.
             app.run(port=flask_port, host='0.0.0.0', use_reloader=False, ssl_context='adhoc')
     except Exception as e:
         print(f"Startup Failed: {e}")
