@@ -1,5 +1,5 @@
-# 直接依賴（固定主版本）
-# 部署前請執行: pip freeze > requirements-lock.txt 以鎖定所有傳遞性依賴
+# Runtime dependencies. For a pinned full environment snapshot, run:
+# pip freeze > requirements-lock.txt
 Flask==3.0.0
 googlemaps==4.10.0
 python-dotenv==1.0.0

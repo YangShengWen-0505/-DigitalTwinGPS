@@ -12,21 +12,63 @@ let csvFetchTimer = null;
 let csvFetchInterval = 1000;
 let dataSource = { mode: "current", url: "/api/csv" };
 
+function parseCsvRows(csvText) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < csvText.length; index += 1) {
+        const char = csvText[index];
+        const next = csvText[index + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                field += '"';
+                index += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === "," && !inQuotes) {
+            row.push(field);
+            field = "";
+            continue;
+        }
+
+        if ((char === "\n" || char === "\r") && !inQuotes) {
+            if (char === "\r" && next === "\n") index += 1;
+            row.push(field);
+            if (row.some((value) => value.length > 0)) rows.push(row);
+            row = [];
+            field = "";
+            continue;
+        }
+
+        field += char;
+    }
+
+    row.push(field);
+    if (row.some((value) => value.length > 0)) rows.push(row);
+    return rows;
+}
+
 function parseCsvLines(csvText, startingLine) {
-    const lines = csvText.trim().split("\n").filter((line) => line.length > 0);
+    const rows = parseCsvRows(csvText);
     const records = [];
     let lineCursor = startingLine;
 
-    lines.forEach((line, index) => {
-        if (lineCursor === 0 && index === 0 && line.startsWith("Timestamp")) {
+    rows.forEach((cols, index) => {
+        if (lineCursor === 0 && index === 0 && cols[0] === "Timestamp") {
             lineCursor += 1;
             return;
         }
-        const cols = line.split(",");
         if (cols.length >= 4) {
             const lat = parseFloat(cols[1]);
             const lng = parseFloat(cols[2]);
-            const action = cols[3].replace(/"/g, "");
+            const action = cols[3];
             if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
                 records.push({ originalIndex: lineCursor, time: cols[0], lat, lng, action });
             }
