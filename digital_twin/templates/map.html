@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DigitalTwinGPS Dashboard</title>
+    <meta name="description" content="Operational dashboard for route simulation, movement logs, and GPS playback.">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
@@ -17,7 +18,7 @@
                 <div class="brand-icon"><i class="fa-solid fa-satellite-dish"></i></div>
                 <div>
                     <div class="brand-title">DigitalTwinGPS</div>
-                    <div class="brand-subtitle">GPS digital twin operations</div>
+                    <div class="brand-subtitle">Route telemetry console</div>
                 </div>
             </div>
 
@@ -47,7 +48,7 @@
             <section id="live-panel" class="surface panel">
                 <div class="panel-head">
                     <div>
-                        <div class="eyebrow" id="status-title-text">Current Status</div>
+                        <div class="eyebrow" id="status-title-text">Current status</div>
                         <div id="action" class="action-text">Waiting...</div>
                     </div>
                     <div class="live-dot" id="indicator"></div>
@@ -60,17 +61,17 @@
 
                 <div class="toggle-list">
                     <label class="toggle-wrap">
-                        <span><i class="fa-solid fa-video"></i> Auto Camera</span>
+                        <span><i class="fa-solid fa-video"></i> Auto camera</span>
                         <input type="checkbox" id="autoFollow" checked>
                         <div class="toggle-switch"></div>
                     </label>
                     <label class="toggle-wrap">
-                        <span><i class="fa-solid fa-location-dot"></i> Show Points</span>
+                        <span><i class="fa-solid fa-location-dot"></i> Show points</span>
                         <input type="checkbox" id="showPoints">
                         <div class="toggle-switch"></div>
                     </label>
                     <label class="toggle-wrap">
-                        <span><i class="fa-solid fa-route"></i> Show Route</span>
+                        <span><i class="fa-solid fa-route"></i> Show route</span>
                         <input type="checkbox" id="showPlannedRoute" checked>
                         <div class="toggle-switch"></div>
                     </label>
@@ -79,7 +80,7 @@
 
             <section id="sys-monitor" class="surface panel">
                 <div class="panel-title-row">
-                    <div class="section-title"><i class="fa-solid fa-route"></i> Mission Monitor</div>
+                    <div class="section-title"><i class="fa-solid fa-route"></i> Mission monitor</div>
                     <span class="status-pill" id="mission-status">IDLE</span>
                 </div>
 
@@ -125,16 +126,16 @@
                 <section class="panel-block">
                     <div class="section-title"><i class="fa-solid fa-layer-group"></i> Basemap</div>
                     <select id="mapLayerSelect">
-                        <option value="googleStreets" selected>Google Streets</option>
+                        <option value="googleStreets" selected>Google streets</option>
                         <option value="osmDark">OSM Standard</option>
                         <option value="cartoDark">CartoDB Dark</option>
                     </select>
                 </section>
 
                 <section class="panel-block">
-                    <div class="section-title"><i class="fa-solid fa-filter"></i> Type Filter</div>
+                    <div class="section-title"><i class="fa-solid fa-filter"></i> Type filter</div>
                     <select id="typeFilter">
-                        <option value="ALL">All Modes</option>
+                        <option value="ALL">All modes</option>
                         <option value="walk">Walk</option>
                         <option value="bus">Bus</option>
                         <option value="mrt">MRT</option>
@@ -147,7 +148,7 @@
                     <div id="legend" class="legend-grid"></div>
                 </section>
 
-                <button id="clearTracks" class="action-btn danger"><i class="fa-solid fa-eraser"></i> Clear Traces</button>
+                <button id="clearTracks" class="action-btn danger"><i class="fa-solid fa-eraser"></i> Clear traces</button>
             </div>
         </aside>
 
@@ -165,7 +166,7 @@
     <div id="mission-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Mission Schedule</h2>
+                <h2>Mission schedule</h2>
                 <button class="close-btn" data-close-modal="mission-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body" id="mission-body"></div>
@@ -175,7 +176,7 @@
     <div id="history-modal" class="modal">
         <div class="modal-content wide">
             <div class="modal-header">
-                <h2>Mission History</h2>
+                <h2>Mission history</h2>
                 <button class="close-btn" data-close-modal="history-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body" id="history-body"></div>
