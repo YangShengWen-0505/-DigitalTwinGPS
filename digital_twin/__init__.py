@@ -9,6 +9,7 @@ from digital_twin.logger import log_sys
 NOISY_GET_PATHS = {
     "/api/system_status",
     "/api/planned_route",
+    "/api/navigation_history",
     "/api/csv",
     "/favicon.ico",
 }

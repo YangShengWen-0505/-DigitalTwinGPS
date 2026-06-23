@@ -82,6 +82,83 @@ export async function openHistoryModal() {
     }
 }
 
+function segmentLabel(segment) {
+    const type = String(segment.type || segment.travel_mode || "move").toLowerCase();
+    if (type === "walk") return "Walking";
+    if (type === "mrt") return "MRT";
+    if (type === "bus") return "Bus";
+    if (type === "transit") return "Transit";
+    return type ? type.charAt(0).toUpperCase() + type.slice(1) : "Move";
+}
+
+function renderTransitMeta(segment) {
+    const parts = [];
+    const line = segment.line_short_name || segment.line_name;
+    if (line) parts.push(`Route: ${escapeHtml(line)}`);
+    if (segment.vehicle_name || segment.vehicle_type) {
+        parts.push(`Vehicle: ${escapeHtml(segment.vehicle_name || segment.vehicle_type)}`);
+    }
+    if (segment.departure_stop || segment.arrival_stop) {
+        parts.push(`Stops: ${escapeHtml(segment.departure_stop || "-")} -> ${escapeHtml(segment.arrival_stop || "-")}`);
+    }
+    if (segment.departure_time || segment.arrival_time) {
+        parts.push(`Time: ${escapeHtml(segment.departure_time || "-")} -> ${escapeHtml(segment.arrival_time || "-")}`);
+    }
+    if (segment.num_stops) parts.push(`${Number(segment.num_stops)} stops`);
+    return parts.map((part) => `<div>${part}</div>`).join("");
+}
+
+export async function openNavigationHistoryModal() {
+    const container = $("navigation-body");
+    openModal("navigation-modal");
+    container.innerHTML = '<div class="empty-state">Loading navigation history...</div>';
+
+    try {
+        const routes = await fetchJson("/api/navigation_history", "Unable to load navigation history.");
+        if (!routes.length) {
+            renderEmpty(container, "No navigation history is available for the current mission.");
+            return;
+        }
+
+        container.innerHTML = routes.map((route, routeIndex) => {
+            const segments = Array.isArray(route.segments) ? route.segments : [];
+            const segmentRows = segments.map((segment) => `
+                <div class="navigation-step ${escapeHtml(segment.type || "")}">
+                    <div class="navigation-step-head">
+                        <span class="stop-badge">${Number(segment.index || 0) || ""}</span>
+                        <div>
+                            <div class="navigation-step-title">${escapeHtml(segmentLabel(segment))}${segment.line_short_name ? ` ${escapeHtml(segment.line_short_name)}` : ""}</div>
+                            <div class="navigation-step-sub">${escapeHtml(segment.distance_text || "-")} | ${escapeHtml(segment.duration_text || "-")}</div>
+                        </div>
+                    </div>
+                    <div class="navigation-step-body">
+                        ${segment.instruction ? `<div>${escapeHtml(segment.instruction)}</div>` : ""}
+                        ${renderTransitMeta(segment)}
+                    </div>
+                </div>
+            `).join("");
+
+            return `
+                <section class="navigation-route">
+                    <div class="navigation-route-head">
+                        <div>
+                            <div class="history-title">Route ${routeIndex + 1}: ${escapeHtml(route.origin)} -> ${escapeHtml(route.destination)}</div>
+                            <div class="history-meta compact">
+                                <div>Mode: ${escapeHtml(route.mode || "-")} ${route.requested_transit_type ? `(${escapeHtml(route.requested_transit_type)})` : ""}</div>
+                                <div>Distance: ${escapeHtml(route.distance_text || "-")} | Duration: ${escapeHtml(route.duration_text || "-")}</div>
+                                <div>Created: ${escapeHtml(route.created_at || "-")}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="navigation-steps">${segmentRows || '<div class="empty-state">No step details were returned.</div>'}</div>
+                </section>
+            `;
+        }).join("");
+    } catch (error) {
+        renderError(container, error.message || "Unable to load navigation history.");
+    }
+}
+
 export async function refreshSystemStatus() {
     try {
         const data = await fetchJson("/api/system_status", "Unable to load system status.");

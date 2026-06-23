@@ -103,7 +103,16 @@ def init_task_logs() -> dict[str, str]:
     with _csv_lock:
         _csv_file_handle = current_csv_file.open(mode="w", newline="", encoding="utf-8")
         _csv_writer = csv.writer(_csv_file_handle)
-        _csv_writer.writerow(["Timestamp", "Latitude", "Longitude", "Action", "Note"])
+        _csv_writer.writerow([
+            "Timestamp",
+            "Latitude",
+            "Longitude",
+            "Action",
+            "Note",
+            "TimestampISO",
+            "DeltaSeconds",
+            "DistanceMeters",
+        ])
         _csv_file_handle.flush()
 
     all_log = current_session_dir / "all.log"
@@ -267,13 +276,35 @@ def log_security(message: str, level: str = "info") -> None:
     log_method(message)
 
 
-def log_movement(lat: float, lng: float, action: str, note: str = "") -> None:
+def log_movement(
+    lat: float,
+    lng: float,
+    action: str,
+    note: str = "",
+    *,
+    sent_at: float | None = None,
+    delta_seconds: float | None = None,
+    distance_meters: float | None = None,
+) -> None:
     if not _csv_writer or not _csv_file_handle:
         return
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sent_dt = datetime.fromtimestamp(sent_at) if sent_at else datetime.now()
+    timestamp = sent_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    timestamp_iso = sent_dt.isoformat(timespec="milliseconds")
+    delta_value = "" if delta_seconds is None else f"{delta_seconds:.3f}"
+    distance_value = "" if distance_meters is None else f"{distance_meters:.2f}"
     try:
         with _csv_lock:
-            _csv_writer.writerow([timestamp, f"{float(lat):.7f}", f"{float(lng):.7f}", action, note])
+            _csv_writer.writerow([
+                timestamp,
+                f"{float(lat):.7f}",
+                f"{float(lng):.7f}",
+                action,
+                note,
+                timestamp_iso,
+                delta_value,
+                distance_value,
+            ])
             _csv_file_handle.flush()
     except Exception as exc:
         log_sys(f"CSV write failed: {exc}", "error")

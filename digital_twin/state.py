@@ -17,10 +17,13 @@ last_api_call_time: float = 0.0
 
 api_lock = threading.Lock()
 coord_lock = threading.Lock()
+send_lock = threading.Lock()
+route_lock = threading.Lock()
 mission_lock = threading.Lock()
 
 current_mission: dict = {"init_loc": "", "stops": []}
 planned_route: list[dict[str, float]] = []
+navigation_history: list[dict] = []
 mission_stats: dict[str, int | float | str | None] = {
     "total_stops": 0,
     "completed_stops": 0,
@@ -40,7 +43,7 @@ def reset_runtime_position() -> None:
 
 
 def start_mission(init_loc: str, stops: list[dict], generation: int) -> None:
-    global mission_active, mission_started_at, mission_finished_at, current_mission
+    global mission_active, mission_started_at, mission_finished_at, current_mission, last_sent_time, last_api_call_time
     now = time.time()
     with mission_lock:
         mission_active = True
@@ -55,6 +58,12 @@ def start_mission(init_loc: str, stops: list[dict], generation: int) -> None:
             "started_at": now,
             "finished_at": None,
         })
+    with send_lock:
+        last_sent_time = 0.0
+        last_api_call_time = 0.0
+    with route_lock:
+        planned_route.clear()
+        navigation_history.clear()
 
 
 def stop_mission(status: str = "stopped") -> None:
@@ -64,12 +73,13 @@ def stop_mission(status: str = "stopped") -> None:
         mission_active = False
         mission_finished_at = now
         current_mission = {"init_loc": "", "stops": []}
-        planned_route.clear()
         mission_stats.update({
             "current_target": "",
             "status": status,
             "finished_at": now,
         })
+    with route_lock:
+        planned_route.clear()
 
 
 def complete_mission() -> None:
@@ -78,9 +88,10 @@ def complete_mission() -> None:
     with mission_lock:
         mission_active = False
         mission_finished_at = now
-        planned_route.clear()
         mission_stats.update({
             "current_target": "Mission Complete",
             "status": "completed",
             "finished_at": now,
         })
+    with route_lock:
+        planned_route.clear()

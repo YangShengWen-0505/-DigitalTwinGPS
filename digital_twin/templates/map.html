@@ -32,6 +32,7 @@
                 <button class="nav-btn" data-open-log="error"><i class="fa-solid fa-triangle-exclamation"></i><span>Errors</span></button>
                 <button class="nav-btn" data-open-log="security"><i class="fa-solid fa-lock"></i><span>Security</span></button>
                 <button class="nav-btn" data-open-csv><i class="fa-solid fa-file-csv"></i><span>CSV</span></button>
+                <button class="nav-btn" id="navigationHistoryBtn"><i class="fa-solid fa-signs-post"></i><span>Navigation</span></button>
                 <button class="nav-btn primary" id="scheduleBtn"><i class="fa-solid fa-clipboard-list"></i><span>Schedule</span></button>
                 <button class="nav-btn primary" id="historyBtn"><i class="fa-solid fa-clock-rotate-left"></i><span>History</span></button>
                 <form class="logout-form" action="/logout" method="post">
@@ -180,6 +181,16 @@
                 <button class="close-btn" data-close-modal="history-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body" id="history-body"></div>
+        </div>
+    </div>
+
+    <div id="navigation-modal" class="modal">
+        <div class="modal-content wide">
+            <div class="modal-header">
+                <h2>Navigation history</h2>
+                <button class="close-btn" data-close-modal="navigation-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" id="navigation-body"></div>
         </div>
     </div>
 

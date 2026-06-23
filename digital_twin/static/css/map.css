@@ -769,6 +769,67 @@ input[type="range"] {
 .history-row:hover { background: rgba(255, 255, 255, 0.055); }
 .history-row.active { background: var(--accent-soft); }
 
+.history-meta.compact {
+    margin-left: 0;
+    margin-top: 6px;
+}
+
+.navigation-route {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.navigation-route-head {
+    padding: 16px 18px 12px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.navigation-steps {
+    display: grid;
+    gap: 10px;
+    padding: 12px 18px 18px;
+}
+
+.navigation-step {
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    border-left: 4px solid var(--red);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.navigation-step.walk { border-left-color: var(--green); }
+.navigation-step.bus { border-left-color: var(--orange); }
+.navigation-step.mrt { border-left-color: var(--blue); }
+.navigation-step.transit { border-left-color: var(--violet); }
+
+.navigation-step-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px 8px;
+}
+
+.navigation-step-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 820;
+    line-height: 1.25;
+}
+
+.navigation-step-sub {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.navigation-step-body {
+    display: grid;
+    gap: 5px;
+    padding: 0 12px 12px 47px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .toast {
     position: fixed;
     right: calc(18px + var(--safe-right));

@@ -1,8 +1,11 @@
 import math
+import queue
 import random
+import re
 import sys
 import threading
 import time
+from html import unescape
 from datetime import datetime, timedelta
 
 import polyline
@@ -17,6 +20,9 @@ retry_strategy = Retry(total=3, backoff_factor=0.3)
 adapter = HTTPAdapter(max_retries=retry_strategy)
 http_session = requests.Session()
 http_session.mount("http://", adapter)
+_phone_send_queue: queue.Queue[tuple[float, float]] = queue.Queue(maxsize=1)
+_phone_worker_lock = threading.Lock()
+_phone_worker_started = False
 
 
 def fmt_time(seconds: float) -> str:
@@ -33,6 +39,155 @@ def get_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> f
     return 2 * radius * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _clean_instruction(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", unescape(value or ""))).strip()
+
+
+def _route_step_type(step: dict) -> str:
+    travel_mode = str(step.get("travel_mode", "")).upper()
+    if travel_mode == "WALKING":
+        return "walk"
+    if travel_mode == "TRANSIT":
+        vehicle_type = step.get("transit_details", {}).get("line", {}).get("vehicle", {}).get("type", "")
+        if vehicle_type == "SUBWAY":
+            return "mrt"
+        if vehicle_type == "BUS":
+            return "bus"
+        return "transit"
+    return travel_mode.lower() or "move"
+
+
+def _build_navigation_detail(
+    selected_route: dict,
+    leg: dict,
+    start_loc: str,
+    end_loc: str,
+    api_mode: str,
+    transit_type: str,
+) -> dict:
+    segments = []
+    for index, step in enumerate(leg.get("steps", []), start=1):
+        points = [
+            {"lat": lat, "lng": lng}
+            for lat, lng in polyline.decode(step.get("polyline", {}).get("points", ""))
+        ]
+        transit = step.get("transit_details", {}) or {}
+        line = transit.get("line", {}) or {}
+        vehicle = line.get("vehicle", {}) or {}
+        segment = {
+            "index": index,
+            "type": _route_step_type(step),
+            "travel_mode": step.get("travel_mode", ""),
+            "instruction": _clean_instruction(step.get("html_instructions", "")),
+            "distance_text": step.get("distance", {}).get("text", ""),
+            "distance_meters": step.get("distance", {}).get("value", 0),
+            "duration_text": step.get("duration", {}).get("text", ""),
+            "duration_seconds": step.get("duration", {}).get("value", 0),
+            "points": points,
+            "points_count": len(points),
+        }
+        if transit:
+            segment.update({
+                "line_name": line.get("name", ""),
+                "line_short_name": line.get("short_name", ""),
+                "vehicle_type": vehicle.get("type", ""),
+                "vehicle_name": vehicle.get("name", ""),
+                "departure_stop": transit.get("departure_stop", {}).get("name", ""),
+                "arrival_stop": transit.get("arrival_stop", {}).get("name", ""),
+                "departure_time": transit.get("departure_time", {}).get("text", ""),
+                "arrival_time": transit.get("arrival_time", {}).get("text", ""),
+                "num_stops": transit.get("num_stops", 0),
+            })
+        segments.append(segment)
+
+    return {
+        "created_at": datetime.now().isoformat(timespec="milliseconds"),
+        "origin": start_loc,
+        "destination": end_loc,
+        "mode": api_mode,
+        "requested_transit_type": transit_type or "AUTO",
+        "summary": selected_route.get("summary", ""),
+        "distance_text": leg.get("distance", {}).get("text", ""),
+        "distance_meters": leg.get("distance", {}).get("value", 0),
+        "duration_text": leg.get("duration", {}).get("text", ""),
+        "duration_seconds": leg.get("duration", {}).get("value", 0),
+        "start_address": leg.get("start_address", ""),
+        "end_address": leg.get("end_address", ""),
+        "segments": segments,
+    }
+
+
+def _distance_from_last_sent(lat: float, lng: float) -> float | None:
+    last_lat = state.last_sent_coords["lat"]
+    last_lng = state.last_sent_coords["lng"]
+    if last_lat is None or last_lng is None:
+        return None
+    return get_distance_meters(float(last_lat), float(last_lng), float(lat), float(lng))
+
+
+def _send_phone_update(lat: float, lng: float) -> None:
+    with state.api_lock:
+        state.last_api_call_time = time.time()
+        if not config.PHONE_TAILSCALE_IP:
+            logger.log_sys("PHONE_TAILSCALE_IP is not configured; skipped phone update.", "warning")
+            return
+        params = {"lat": f"{float(lat):.7f}", "lng": f"{float(lng):.7f}"}
+        try:
+            # MacroDroid exposes a small HTTP server on the phone over Tailscale.
+            # Query parameters are used because the phone-side macro maps them
+            # directly into local variables.
+            http_session.get(f"http://{config.PHONE_TAILSCALE_IP}:8080/gps", params=params, timeout=0.8)
+        except requests.exceptions.Timeout:
+            logger.log_sys("P2P timeout while sending GPS command.", "warning")
+        except requests.exceptions.ConnectionError:
+            logger.log_sys("P2P connection error while sending GPS command.", "warning")
+        except requests.exceptions.RequestException as exc:
+            logger.log_sys(f"P2P request failed: {exc}", "warning")
+
+
+def _phone_send_worker() -> None:
+    while True:
+        lat, lng = _phone_send_queue.get()
+        try:
+            _send_phone_update(lat, lng)
+        finally:
+            _phone_send_queue.task_done()
+
+
+def _ensure_phone_worker() -> None:
+    global _phone_worker_started
+    if _phone_worker_started:
+        return
+    with _phone_worker_lock:
+        if _phone_worker_started:
+            return
+        threading.Thread(target=_phone_send_worker, daemon=True).start()
+        _phone_worker_started = True
+
+
+def _queue_phone_update(lat: float, lng: float) -> None:
+    _ensure_phone_worker()
+    item = (float(lat), float(lng))
+    try:
+        _phone_send_queue.put_nowait(item)
+        return
+    except queue.Full:
+        pass
+
+    try:
+        _phone_send_queue.get_nowait()
+        _phone_send_queue.task_done()
+    except queue.Empty:
+        pass
+
+    try:
+        _phone_send_queue.put_nowait(item)
+    except queue.Full:
+        # The worker took the replacement slot between get and put. Dropping
+        # this phone update is intentional; CSV already recorded this second.
+        pass
+
+
 def apply_gps_noise(lat: float, lng: float) -> tuple[float, float]:
     inertia = 0.95
     state.drift_state["lat"] = state.drift_state["lat"] * inertia + random.gauss(0, 0.000003)
@@ -44,48 +199,50 @@ def apply_gps_noise(lat: float, lng: float) -> tuple[float, float]:
 
 
 def send_to_agent(lat: float, lng: float, action_name: str = "Unknown") -> None:
-    now = time.time()
-    if now - state.last_sent_time < 0.5:
-        return
-    state.last_sent_time = now
+    while True:
+        with state.send_lock:
+            now = time.time()
+            last_sent_second = int(state.last_sent_time) if state.last_sent_time else None
+            current_second = int(now)
+            if last_sent_second != current_second:
+                delta_seconds = now - state.last_sent_time if state.last_sent_time else None
+                state.last_sent_time = now
+                sent_at = now
+                break
+            wait_seconds = (current_second + 1) - now
+        if wait_seconds <= 0:
+            break
+        time.sleep(min(wait_seconds, 0.05))
 
-    params = {"lat": f"{float(lat):.7f}", "lng": f"{float(lng):.7f}"}
+    distance_meters = _distance_from_last_sent(lat, lng)
     with state.coord_lock:
         state.last_sent_coords.update({"lat": float(lat), "lng": float(lng)})
-    logger.log_movement(float(lat), float(lng), action_name)
-
-    with state.api_lock:
-        state.last_api_call_time = time.time()
-        if not config.PHONE_TAILSCALE_IP:
-            logger.log_sys("PHONE_TAILSCALE_IP is not configured; skipped phone update.", "warning")
-            return
-        try:
-            # MacroDroid exposes a small HTTP server on the phone over Tailscale.
-            # Query parameters are used because the phone-side macro maps them
-            # directly into local variables.
-            http_session.get(f"http://{config.PHONE_TAILSCALE_IP}:8080/gps", params=params, timeout=2.0)
-        except requests.exceptions.Timeout:
-            logger.log_sys("P2P timeout while sending GPS command.", "warning")
-        except requests.exceptions.ConnectionError:
-            logger.log_sys("P2P connection error while sending GPS command.", "warning")
-        except requests.exceptions.RequestException as exc:
-            logger.log_sys(f"P2P request failed: {exc}", "warning")
+    logger.log_movement(
+        float(lat),
+        float(lng),
+        action_name,
+        sent_at=sent_at,
+        delta_seconds=delta_seconds,
+        distance_meters=distance_meters,
+    )
+    _queue_phone_update(float(lat), float(lng))
 
 
 def active_wait(wait_seconds: float, action_name: str, display_msg: str, my_generation: int) -> None:
     logger.log_sys(f"Active wait started: {display_msg} for {fmt_time(wait_seconds)}", "debug")
     target_time = time.time() + max(0, wait_seconds)
-    last_send_time = 0.0
+    next_send_second = int(time.time())
     while my_generation == state.mission_generation:
-        remaining = target_time - time.time()
+        now = time.time()
+        remaining = target_time - now
         if remaining <= 0:
             break
-        if time.time() - last_send_time >= 1.0:
+        if int(now) >= next_send_second:
             sys.stdout.write(f"\r   [{display_msg}] {fmt_time(remaining)}   ")
             sys.stdout.flush()
             if state.last_sent_coords["lat"] is not None and state.last_sent_coords["lng"] is not None:
                 send_to_agent(state.last_sent_coords["lat"], state.last_sent_coords["lng"], action_name)
-            last_send_time = time.time()
+            next_send_second = int(time.time()) + 1
         time.sleep(0.1)
     sys.stdout.write("\r" + " " * 60 + "\r")
     sys.stdout.flush()
@@ -275,11 +432,14 @@ def smart_navigate(start_loc: str, end_loc: str, force_mode: str, transit_type: 
 
         selected_route = _select_transit_route(directions) if api_mode == "transit" else directions[0]
         leg = selected_route["legs"][0]
+        navigation_detail = _build_navigation_detail(selected_route, leg, start_loc, end_loc, api_mode, transit_type)
+        with state.route_lock:
+            state.navigation_history.append(navigation_detail)
 
-        state.planned_route.clear()
-        for step in leg["steps"]:
-            for lat, lng in polyline.decode(step["polyline"]["points"]):
-                state.planned_route.append({"lat": lat, "lng": lng})
+            state.planned_route.clear()
+            for step in leg["steps"]:
+                for lat, lng in polyline.decode(step["polyline"]["points"]):
+                    state.planned_route.append({"lat": lat, "lng": lng})
 
         gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={start_loc}&destination={end_loc}&travelmode={api_mode}"
         if api_mode != "transit" and state.planned_route:

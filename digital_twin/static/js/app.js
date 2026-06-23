@@ -1,7 +1,7 @@
 import { $, closeModal, showToast } from "./ui.js";
 import { initMap, resetMapStats } from "./mapView.js";
 import { bindPlaybackControls, clearPlaybackData, fetchLiveCsvData } from "./playback.js";
-import { openHistoryModal, openMissionModal, refreshPlannedRoute, refreshSystemStatus } from "./panels.js";
+import { openHistoryModal, openMissionModal, openNavigationHistoryModal, refreshPlannedRoute, refreshSystemStatus } from "./panels.js";
 
 function bindShellControls() {
     const sidebar = $("right-sidebar");
@@ -72,6 +72,10 @@ function bindShellControls() {
     $("historyBtn").addEventListener("click", () => {
         closeCommandMenu();
         openHistoryModal();
+    });
+    $("navigationHistoryBtn").addEventListener("click", () => {
+        closeCommandMenu();
+        openNavigationHistoryModal();
     });
     $("clearTracks").addEventListener("click", () => {
         clearPlaybackData();

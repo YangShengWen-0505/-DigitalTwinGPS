@@ -176,7 +176,15 @@ def get_system_status():
 @api_bp.route("/api/planned_route", methods=["GET"])
 @require_api_key()
 def get_planned_route():
-    return jsonify(state.planned_route)
+    with state.route_lock:
+        return jsonify(list(state.planned_route))
+
+
+@api_bp.route("/api/navigation_history", methods=["GET"])
+@require_api_key()
+def get_navigation_history():
+    with state.route_lock:
+        return jsonify(list(state.navigation_history))
 
 
 @api_bp.route("/api/csv", methods=["GET"])
