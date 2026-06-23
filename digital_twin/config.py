@@ -36,8 +36,25 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
     print(f"[SYSTEM] Error: failed to load {config_path}: {e}")
     CONFIG = {"settings": {"SPEED_MULTIPLIER": 1, "GUARD_INTERVAL": 1.5}, "mrt_station_groups": {}}
 
-SPEED_MULTIPLIER = float(CONFIG.get("settings", {}).get("SPEED_MULTIPLIER", 1))
-GUARD_INTERVAL = float(CONFIG.get("settings", {}).get("GUARD_INTERVAL", 1.5))
+def _env_float(name: str, fallback: float) -> float:
+    value = os.getenv(name, "").strip().strip('"')
+    if not value:
+        return fallback
+    try:
+        return float(value)
+    except ValueError:
+        print(f"[SYSTEM] Warning: {name} must be a number. Falling back to {fallback}.")
+        return fallback
+
+
+SPEED_MULTIPLIER = _env_float(
+    "SPEED_MULTIPLIER",
+    float(CONFIG.get("settings", {}).get("SPEED_MULTIPLIER", 1)),
+)
+GUARD_INTERVAL = _env_float(
+    "GUARD_INTERVAL",
+    float(CONFIG.get("settings", {}).get("GUARD_INTERVAL", 1.5)),
+)
 if SPEED_MULTIPLIER <= 0:
     print("[SYSTEM] Warning: SPEED_MULTIPLIER must be > 0. Falling back to 1.")
     SPEED_MULTIPLIER = 1
